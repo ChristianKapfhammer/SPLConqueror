@@ -131,5 +131,15 @@ namespace SPLConqueror_Core
         {
             return base.ToString();
         }
+
+        public double getMaxValue()
+        {
+            Dictionary<NumericOption, double> numValues = new Dictionary<NumericOption, double>();
+
+            foreach (NumericOption o in GlobalState.varModel.NumericOptions)
+                numValues.Add(o, o.Max_value);
+
+            return this.eval(new Configuration(GlobalState.varModel.BinaryOptions, numValues));
+        }
     }
 }

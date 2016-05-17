@@ -8,7 +8,7 @@ using SPLConqueror_Core;
 
 namespace CommandLine
 {
-    class Script_A
+    public class Script_A
     {
 
         private StreamReader reader = null;

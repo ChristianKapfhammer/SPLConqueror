@@ -197,14 +197,19 @@ namespace SPLConqueror_GUI
         private string loadExpression()
         {
             String expression = "";
-            OpenFileDialog dialog = new OpenFileDialog();
+            
 
-            dialog.Filter = "txt files (*.txt)|*.txt|All files (*.*)|*.*";
+            OpenFileDialog dialog = new OpenFileDialog();
+            
+            //dialog.Filter = "txt files (*.txt)|*.txt|All files (*.*)|*.*";
 
             if (dialog.ShowDialog() == DialogResult.OK)
             {
                 System.IO.FileInfo fi = new System.IO.FileInfo(dialog.FileName);
-                expression = System.IO.File.ReadAllText(fi.FullName);
+
+                Script_A script = new Script_A(dialog.FileName);
+
+                /*expression = System.IO.File.ReadAllText(fi.FullName);
 
                 string[] parts = expression.Split(' ');
 
@@ -214,7 +219,7 @@ namespace SPLConqueror_GUI
                 if (parts.Length > 1 && !isOperator(parts[1]) && parts[0] != "log10(")
                     expression = String.Join(" ", parts, 1, parts.Length - 1);
                 else
-                    expression = String.Join(" ", parts, 0, parts.Length);
+                    expression = String.Join(" ", parts, 0, parts.Length);*/
             }
 
             return expression;

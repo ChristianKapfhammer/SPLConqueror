@@ -35,6 +35,7 @@ namespace MachineLearning.Learning.Regression
 
         //Learning and validation data sets
         protected List<Configuration> learningSet = new List<Configuration>();
+        protected List<Configuration> normLearningSet = new List<Configuration>();
         protected List<Configuration> validationSet = new List<Configuration>();
         protected ILArray<double> Y_learning, Y_validation = ILMath.empty();
         protected ConcurrentDictionary<Feature, ILArray<double>> DM_columns = new ConcurrentDictionary<Feature, ILArray<double>>();
@@ -63,6 +64,7 @@ namespace MachineLearning.Learning.Regression
             MLsettings = null;
             bruteForceCandidates = new List<Feature>();
             learningSet = new List<Configuration>();
+            normLearningSet = new List<Configuration>();
             validationSet = new List<Configuration>();
             Y_validation = ILMath.empty();
             Y_learning = ILMath.empty();
@@ -309,24 +311,21 @@ namespace MachineLearning.Learning.Regression
                 foreach (Feature candidate in errorOfFeature.Keys)
                 {
                     var candidateError = errorOfFeature[candidate];
-                    var candidateScore = previousRound.learningError_relative - candidateError;
-                    if (candidateScore > 0)
-                    {
-                        if (MLsettings.candidateSizePenalty)
+                    //var candidateScore = previousRound.learningError_relative - candidateError;
+                    
+                        if (candidateError < minimalRoundError)
                         {
-                            candidateScore /= candidate.getNumberOfDistinctParticipatingOptions();
-                        }
-                        if (candidateScore > maximalRoundScore)
-                        {
-                            maximalRoundScore = candidateScore;
+                            maximalRoundScore = candidateError;
                             minimalRoundError = errorOfFeature[candidate];
                             bestCandidate = candidate;
                             bestModel = errorOfFeatureWithModel[candidate];
-                        } else
-                        {
-                            candidate.Constant = 1;                        
-                        }
-                    }
+                        } 
+                        
+                }
+                foreach (Feature candidate in errorOfFeature.Keys)
+                {
+                    if(candidate != bestCandidate)
+                        candidate.Constant = 1;
                 }
             } else if (MLsettings.scoreMeasure == ML_Settings.ScoreMeasure.INFLUENCE)
             {
@@ -399,10 +398,133 @@ namespace MachineLearning.Learning.Regression
                     this.badFeatures.Add(myList[i].Key, 3);//wait for 3 rounds
             }
         }
-
-
+        
         private bool fitModel(List<Feature> newModel)
         {
+            newModel = new List<Feature>();
+
+            foreach (ConfigurationOption o in GlobalState.varModel.getOptions())
+                newModel.Add(new Feature(o.Name, GlobalState.varModel));
+                
+            foreach(Feature f in newModel)
+                f.Constant = 1.0;
+            
+            double lastError = Double.MaxValue;
+            double threshold = 0.001;
+            bool endingReached = false;
+            double[] learningRates = new double[newModel.Count];
+
+            for (int i = 0; i < newModel.Count; i++)
+                learningRates[i] = 0.0001 / newModel[i].getMaxValue();
+
+            while (!endingReached)
+            {
+                double[] constantChange = new double[newModel.Count];
+                double currAverageError = 0.0;
+
+                for (int k = 0; k < learningSet.Count; k++)
+                {
+                    double diffValue = 0.0;
+
+                    for (int i = 0; i < newModel.Count; i++)
+                        diffValue += newModel[i].Constant * newModel[i].eval(learningSet[k]);
+
+                    diffValue -= learningSet[k].GetNFPValue();
+                    currAverageError += Math.Abs(diffValue);
+
+                    // Calculate constant change with normed value
+                    for (int i = 0; i < newModel.Count; i++)
+                        constantChange[i] += diffValue * newModel[i].eval(learningSet[k]);
+                }
+
+                currAverageError = currAverageError / learningSet.Count;
+                endingReached = Math.Abs(currAverageError) <= threshold;
+                
+                // Checking if all learning rates are small
+                if (!endingReached)
+                {
+                    bool learningRatesSmall = true;
+
+                    for (int i = 0; i < newModel.Count; i++)
+                        learningRatesSmall &= learningRates[i] < 1E-10;
+
+                    endingReached |= learningRatesSmall;
+
+                    if (endingReached)
+                        Console.WriteLine("Exit - Learning rates");
+                } else
+                    Console.WriteLine("Exit - Threshold");
+
+                // Checking if the changes of the constants are all small
+                if (!endingReached)
+                {
+                    bool constantChangeSmall = true;
+
+                    foreach (double change in constantChange)
+                        constantChangeSmall &= Math.Abs(change) < 1E-7;
+
+                    endingReached |= constantChangeSmall;
+
+                    if (endingReached)
+                        Console.WriteLine("Exit - Constants");
+                }
+
+                // Adjusting the learning rate and constants
+                if (!endingReached)
+                {
+                    double[] nextConstants = new double[newModel.Count];
+                    bool constantsChanged = false;
+
+                    for (int i = 0; i < newModel.Count; i++)
+                    {
+                        nextConstants[i] = newModel[i].Constant
+                                - learningRates[i] * (constantChange[i] / learningSet.Count);
+                    }
+
+                    double nextAverageError = 0.0;
+
+                    for (int k = 0; k < learningSet.Count; k++)
+                    {
+                        double diffValue = 0.0;
+
+                        for (int j = 0; j < newModel.Count; j++)
+                            diffValue += nextConstants[j] * newModel[j].eval(learningSet[k]);
+
+                        diffValue -= learningSet[k].GetNFPValue();
+                        nextAverageError += Math.Abs(diffValue);
+                    }
+
+                    nextAverageError = nextAverageError / learningSet.Count;
+
+                    if (Math.Abs(nextAverageError) < Math.Abs(currAverageError))
+                    {
+
+                        for (int i = 0; i < newModel.Count; i++)
+                        {
+                            newModel[i].Constant = Math.Round(nextConstants[i], 10);
+                            learningRates[i] *= 1.005;
+                        }
+                        constantsChanged = true;
+                    }
+                    else
+                    {
+                        for (int i = 0; i < newModel.Count; i++)
+                            learningRates[i] *= 0.9;
+                    }
+
+                    if (constantsChanged)
+                        lastError = currAverageError;
+                }
+            }
+
+            
+
+            //foreach (Feature f in newModel)
+            //    f.Constant = f.Constant / f.getMaxValue();
+
+            return true;
+            
+            /*
             ILArray<double> DM = createDataMatrix(newModel);
             if (DM.Size.NumberOfElements == 0)
                 return false;
@@ -429,9 +551,8 @@ namespace MachineLearning.Learning.Regression
             //the fitting found no further influence
             if (newModel[constants.Length - 1].Constant == 0)
                 return false;
-            return true;
+            return true;*/
         }
-
 
         /// <summary>
         /// The method generates a list of candidates to be added to the current model. These candidates are later fitted using regression and rated for their accuracy in estimating the values of the validation set.
@@ -981,9 +1102,11 @@ namespace MachineLearning.Learning.Regression
                 current.terminationReason = "abortError";
                 return true;
             }
-            
             //if (minimalRequiredImprovement(current) + current.validationError_relative > oldRoundRelativeError)
-            if (MLsettings.minImprovementPerRound > current.bestCandidateScore)
+
+            if (current.learningError_relative + MLsettings.minImprovementPerRound > previous.learningError_relative)
+                return true;
+            if (MLsettings.withHierarchy && MLsettings.minImprovementPerRound > current.bestCandidateScore)
             {
                 if (this.MLsettings.withHierarchy)
                 {
@@ -1066,7 +1189,21 @@ namespace MachineLearning.Learning.Regression
             Y_learning = temparryLearn;
             Y_learning = Y_learning.T;
 
-            //Now, we genrate for each inidividual option the data column. We also remove options from the initial feature set that occur in all or no variants of the learning set
+            // Create mean normed learning set
+            Dictionary<ConfigurationOption, double> optionVals = new Dictionary<ConfigurationOption, double>();
+
+            foreach (Configuration c in learningSet)
+            {
+                
+                Dictionary<NumericOption, double> numVals = new Dictionary<NumericOption, double>();
+
+                foreach (NumericOption o in c.NumericOptions.Keys)
+                    numVals.Add(o, (c.NumericOptions[o]) / (o.Max_value));
+
+                normLearningSet.Add(new Configuration(c.BinaryOptions, numVals));
+            }
+
+            //Now, we generate for each inidividual option the data column. We also remove options from the initial feature set that occur in all or no variants of the learning set
             List<Feature> featuresToRemove = new List<Feature>();
             foreach (Feature f in this.initialFeatures)
             {
