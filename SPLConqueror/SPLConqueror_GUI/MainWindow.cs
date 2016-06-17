@@ -198,13 +198,16 @@ namespace SPLConqueror_GUI
         private string loadExpression()
         {
             String expression = "";
-            OpenFileDialog dialog = new OpenFileDialog();
+            
 
+            OpenFileDialog dialog = new OpenFileDialog();
+            
             dialog.Filter = "txt files (*.txt)|*.txt|All files (*.*)|*.*";
 
             if (dialog.ShowDialog() == DialogResult.OK)
             {
                 System.IO.FileInfo fi = new System.IO.FileInfo(dialog.FileName);
+
                 expression = System.IO.File.ReadAllText(fi.FullName);
 
                 string[] parts = expression.Split(' ');
