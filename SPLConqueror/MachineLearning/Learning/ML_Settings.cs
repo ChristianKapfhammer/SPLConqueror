@@ -13,6 +13,9 @@ namespace MachineLearning.Learning
 
         public enum LossFunction {RELATIVE, LEASTSQUARES, ABSOLUTE}
 
+        public bool useGradientDescent = false;
+
+
         /// <summary>
         /// The loss function on which bases features are added to the influence model.
         /// </summary>
@@ -21,7 +24,7 @@ namespace MachineLearning.Learning
         /// <summary>
         /// Turns the parallel execution of model candidates on/off.
         /// </summary>
-        public bool parallelization = true;
+        public bool parallelization = false;
 
         /// <summary>
         /// Turns the bagging functionality (ensemble learning) on. This functionality relies on parallelization (requires probably larger amount of memory).

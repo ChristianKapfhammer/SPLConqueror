@@ -376,7 +376,34 @@ namespace MachineLearning.Learning.Regression
         private ModelFit evaluateCandidate(List<Feature> model)
         {
             ModelFit fit = new ModelFit();
-            fit.complete = fitModel(model);
+
+            if(MLsettings.useGradientDescent)
+                fit.complete = fitModel_GradientDescent(model);
+            else
+                fit.complete = fitModel_regression(model); 
+
+            //Console.WriteLine("new");
+            //model.ForEach(x => Console.Write(x.ToString()+" "));
+            //Console.WriteLine();
+
+            //List<Feature> newModel = new List<Feature>();
+
+            //foreach (Feature o in model)
+            //{
+            //    Feature newF = new Feature(o.getPureString(), GlobalState.varModel);
+            //    newModel.Add(newF);
+            //}
+
+            //foreach (Feature f in newModel)
+            //    f.Constant = 1.0;
+
+            //ModelFit fit2 = new ModelFit();
+            //fit.complete = fitModel_regression(newModel);
+
+            //Console.WriteLine("old");
+            //newModel.ForEach(x => Console.Write(x.ToString() + " "));
+            //Console.WriteLine();
+
             double temp;
             fit.error = computeModelError(model, out temp);
             fit.newModel = model;
@@ -402,16 +429,48 @@ namespace MachineLearning.Learning.Regression
                     this.badFeatures.Add(myList[i].Key, 3);//wait for 3 rounds
             }
         }
-        
-        private bool fitModel(List<Feature> newModel)
-        {
-            newModel = new List<Feature>();
 
-            foreach (ConfigurationOption o in GlobalState.varModel.getOptions())
-                newModel.Add(new Feature(o.Name, GlobalState.varModel));
+        private bool fitModel_regression(List<Feature> newModel)
+        {
+            ILArray<double> DM = createDataMatrix(newModel);
+            if (DM.Size.NumberOfElements == 0)
+                return false;
+            //   ILArray<double> DMT = DM.T;
+            ILArray<double> temparray = null;
+
+            double[,] fixSVDwithACCORD;
+            //var exp = toSystemMatrix<double>(DM.T);
+            // fixSVDwithACCORD = (double[,])exp;
+            fixSVDwithACCORD = ((double[,])toSystemMatrix<double>(DM.T)).PseudoInverse();
+            temparray = fixSVDwithACCORD;
+
+            ILArray<double> constants;
+            if (temparray.IsEmpty)
+                constants = ILMath.multiply(DM, Y_learning.T);
+            else
+                constants = ILMath.multiply(temparray, Y_learning.T);
+            double[] fittedConstant = constants.ToArray<double>();
+            for (int i = 0; i < constants.Length; i++)
+            {
+                newModel[i].Constant = fittedConstant[i];
+                //constants.GetValue(i);
+            }
+            //the fitting found no further influence
+            if (newModel[constants.Length - 1].Constant == 0)
+                return false;
+            return true;
+        }
+
+
+        private bool fitModel_GradientDescent(List<Feature> newModel)
+        {
+            //newModel = new List<Feature>();
+
+            //foreach (ConfigurationOption o in GlobalState.varModel.getOptions())
+            //    newModel.Add(new Feature(o.Name, GlobalState.varModel));
                 
-            foreach(Feature f in newModel)
-                f.Constant = 1.0;
+            //foreach(Feature f in newModel)
+            //    f.Constant = 1.0;
             
             double lastError = Double.MaxValue;
             double threshold = 0.001;
@@ -426,14 +485,28 @@ namespace MachineLearning.Learning.Regression
                 double[] constantChange = new double[newModel.Count];
                 double currAverageError = 0.0;
 
+                double errorOld = 0.0;
+                double maxOld = 0.0;
+
                 for (int k = 0; k < learningSet.Count; k++)
                 {
                     double diffValue = 0.0;
+                    
 
                     for (int i = 0; i < newModel.Count; i++)
-                        diffValue += newModel[i].Constant * newModel[i].eval(learningSet[k]);
+                    {
+                        diffValue += newModel[i].Constant * newModel[i].eval(learningSet[k]) ;
+                        errorOld += (learningSet[k].GetNFPValue() - newModel[i].Constant * newModel[i].eval(learningSet[k])) * (learningSet[k].GetNFPValue() - newModel[i].Constant * newModel[i].eval(learningSet[k]));
 
+                       
+
+                    }
                     diffValue -= learningSet[k].GetNFPValue();
+
+                    maxOld = Math.Max(maxOld , Math.Abs(diffValue));
+                    
+                    //currAverageError += Math.Abs(errorOld);
+
                     currAverageError += Math.Abs(diffValue);
 
                     // Calculate constant change with normed value
@@ -441,7 +514,8 @@ namespace MachineLearning.Learning.Regression
                         constantChange[i] += diffValue * newModel[i].eval(learningSet[k]);
                 }
 
-                currAverageError = currAverageError / learningSet.Count;
+                
+                currAverageError = Math.Sqrt( currAverageError / learningSet.Count);
                 endingReached = Math.Abs(currAverageError) <= threshold;
                 
                 // Checking if all learning rates are small
@@ -473,6 +547,9 @@ namespace MachineLearning.Learning.Regression
                         Console.WriteLine("Exit - Constants");
                 }
 
+                double errorNew = 0.0;
+                double maxNew = 0.0;
+
                 // Adjusting the learning rate and constants
                 if (!endingReached)
                 {
@@ -485,28 +562,78 @@ namespace MachineLearning.Learning.Regression
                                 - learningRates[i] * (constantChange[i] / learningSet.Count);
                     }
 
+                 
                     double nextAverageError = 0.0;
+
+                    if (newModel.Count == 2 && newModel[1].getPureString().Contains("postSmoothing"))
+                    {
+                        if (constantChange[1] > 0.0)
+                        {
+                        }
+                    }
 
                     for (int k = 0; k < learningSet.Count; k++)
                     {
                         double diffValue = 0.0;
 
                         for (int j = 0; j < newModel.Count; j++)
+                        {
                             diffValue += nextConstants[j] * newModel[j].eval(learningSet[k]);
+                            errorNew += (learningSet[k].GetNFPValue() - nextConstants[j] * newModel[j].eval(learningSet[k])) * (learningSet[k].GetNFPValue() - nextConstants[j] * newModel[j].eval(learningSet[k]));
+                        }
 
                         diffValue -= learningSet[k].GetNFPValue();
+                        //nextAverageError += Math.Abs(errorNew);
+
+                        maxNew = Math.Max(maxNew, Math.Abs(diffValue));
+
                         nextAverageError += Math.Abs(diffValue);
                     }
 
-                    nextAverageError = nextAverageError / learningSet.Count;
+                    nextAverageError = Math.Sqrt( nextAverageError / learningSet.Count);
+
+                    //double epsilon = 0.00000000000001;
+
+                    if (Math.Abs(nextAverageError) == Math.Abs(currAverageError))
+                    {
+
+                        for (int k = 0; k < learningSet.Count; k++)
+                        {
+                            double pred1 = 0.0;
+                            double pred2 = 0.0;
+
+                            for (int j = 0; j < newModel.Count; j++)
+                                pred1 += nextConstants[j] * newModel[j].eval(learningSet[k]);
+
+                            for (int j = 0; j < newModel.Count; j++)
+                                pred2 += newModel[j].Constant * newModel[j].eval(learningSet[k]);
+
+
+
+                            //Console.WriteLine("pred1: " + pred1 + " | pred2: " + pred2 + "  measured: " + learningSet[k].GetNFPValue());
+                        }
+
+                    }
+
+                    if(Math.Abs(nextAverageError) == Math.Abs(currAverageError))
+                    {
+                        if (maxNew < maxOld)
+                        {
+
+                            for (int i = 0; i < newModel.Count; i++)
+                            {
+                                newModel[i].Constant = nextConstants[i];
+                            }
+                            constantsChanged = true;
+                        }
+                    }
 
                     if (Math.Abs(nextAverageError) < Math.Abs(currAverageError))
                     {
-
                         for (int i = 0; i < newModel.Count; i++)
                         {
-                            newModel[i].Constant = Math.Round(nextConstants[i], 10);
-                            learningRates[i] *= 1.005;
+                            newModel[i].Constant = nextConstants[i]; 
+                            learningRates[i] *= 1.05;
                         }
                         constantsChanged = true;
                     }
