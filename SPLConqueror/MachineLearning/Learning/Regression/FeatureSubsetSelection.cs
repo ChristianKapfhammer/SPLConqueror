@@ -464,14 +464,6 @@ namespace MachineLearning.Learning.Regression
 
         private bool fitModel_GradientDescent(List<Feature> newModel)
         {
-            //newModel = new List<Feature>();
-
-            //foreach (ConfigurationOption o in GlobalState.varModel.getOptions())
-            //    newModel.Add(new Feature(o.Name, GlobalState.varModel));
-                
-            //foreach(Feature f in newModel)
-            //    f.Constant = 1.0;
-            
             double lastError = Double.MaxValue;
             double threshold = 0.001;
             bool endingReached = false;
@@ -570,6 +562,23 @@ namespace MachineLearning.Learning.Regression
                         if (constantChange[1] > 0.0)
                         {
                         }
+                        Console.WriteLine(nextConstants[0] + " -> " + constantChange[0] + " | " + nextConstants[1] + " -> " + constantChange[1]);
+                        //for (int k = 0; k < learningSet.Count; k++)
+                        //{
+                        //    double pred1 = 0.0;
+                        //    double pred2 = 0.0;
+
+                        //    for (int j = 0; j < newModel.Count; j++)
+                        //        pred1 += nextConstants[j] * newModel[j].eval(learningSet[k]);
+
+                        //    for (int j = 0; j < newModel.Count; j++)
+                        //        pred2 += newModel[j].Constant * newModel[j].eval(learningSet[k]);
+
+
+
+                        //    Console.WriteLine("pred1: " + pred1 + " | pred2: " + pred2 + "  measured: " + learningSet[k].GetNFPValue());
+                        //}
+
                     }
 
                     for (int k = 0; k < learningSet.Count; k++)
@@ -597,21 +606,7 @@ namespace MachineLearning.Learning.Regression
                     if (Math.Abs(nextAverageError) == Math.Abs(currAverageError))
                     {
 
-                        for (int k = 0; k < learningSet.Count; k++)
-                        {
-                            double pred1 = 0.0;
-                            double pred2 = 0.0;
 
-                            for (int j = 0; j < newModel.Count; j++)
-                                pred1 += nextConstants[j] * newModel[j].eval(learningSet[k]);
-
-                            for (int j = 0; j < newModel.Count; j++)
-                                pred2 += newModel[j].Constant * newModel[j].eval(learningSet[k]);
-
-
-
-                            //Console.WriteLine("pred1: " + pred1 + " | pred2: " + pred2 + "  measured: " + learningSet[k].GetNFPValue());
-                        }
 
                     }
 
@@ -640,7 +635,7 @@ namespace MachineLearning.Learning.Regression
                     else
                     {
                         for (int i = 0; i < newModel.Count; i++)
-                            learningRates[i] *= 0.9;
+                            learningRates[i] *= 0.95;
                     }
 
                     if (constantsChanged)
