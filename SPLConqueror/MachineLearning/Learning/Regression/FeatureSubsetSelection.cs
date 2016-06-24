@@ -283,6 +283,12 @@ namespace MachineLearning.Learning.Regression
                     var customCulture = Thread.CurrentThread.CurrentCulture;
                     Task task = Task.Factory.StartNew(() =>
                     {
+                        for (int i = 0; i < previousRound.FeatureSet.Count; i++)
+                        {
+                            newModel[i].Constant = previousRound.FeatureSet[i].Constant;
+                        }
+
+
                         Thread.CurrentThread.CurrentCulture = customCulture;
                         ModelFit fi = evaluateCandidate(newModel);
                         if (fi.complete)
@@ -296,6 +302,15 @@ namespace MachineLearning.Learning.Regression
                 }
                 else
                 {//Serial execution of the fitting model for the current candidate
+                    if (MLsettings.useGradientDescent && newModel.Count > 2)
+                    {
+                    }
+
+                    for (int i = 0; i < previousRound.FeatureSet.Count; i++)
+                    {
+                        newModel[i].Constant = previousRound.FeatureSet[i].Constant;
+                    }
+                    
                     ModelFit fi = evaluateCandidate(newModel);
                     if (fi.complete)
                     {
@@ -378,9 +393,13 @@ namespace MachineLearning.Learning.Regression
             ModelFit fit = new ModelFit();
 
             if(MLsettings.useGradientDescent)
-                fit.complete = fitModel_GradientDescent(model);
+                //fit.complete = fitModel_GradientDescent(model);
+                fit.complete = fitModel_SPSA(model);
             else
-                fit.complete = fitModel_regression(model); 
+                fit.complete = fitModel_regression(model);
+
+              
+
 
             //Console.WriteLine("new");
             //model.ForEach(x => Console.Write(x.ToString()+" "));
@@ -409,6 +428,8 @@ namespace MachineLearning.Learning.Regression
             fit.newModel = model;
             return fit;
         }
+
+        
 
         /// <summary>
         /// Optimization: we do not want to consider candidates in the next X rounds that showed no or only a slight improvment in accuracy relative to all other candidates
@@ -461,6 +482,161 @@ namespace MachineLearning.Learning.Regression
             return true;
         }
 
+        Random rand_SPSA = new Random(0);
+
+       /// <summary>
+        /// This is a implementation of the Simultaneous Perturbation Stochastic Apporximation algorithm. The local variables are named by their counter parts in the paper: Implementation of the simultaneous perturbation algorithm for stochastic optimization by James C. Spall. For more information, see for example: http://www.jhuapl.edu/spsa/PDF-SPSA/Spall_Implementation_of_the_Simultaneous.PDF
+        /// 
+        /// The algorithm is used to determine the coefficients of all terms of a given model. 
+        /// 
+       /// </summary>
+       /// <param name="model"></param>
+       /// <returns></returns>
+        private bool fitModel_SPSA(System.Collections.Generic.List<Feature> model)
+        {
+
+            int k = 0;
+
+            int steps = 0;
+
+            double alpha = 0.602;
+            double gamma = 0.101;
+
+            //for (int i = 0; i < model.Count; i++)
+            //{
+            //    Console.Write(model[i].getPureString()+ "  ");
+            //}
+            //Console.WriteLine();
+
+            double a = 10 / model.Count;
+            double c = 10 / model.Count;
+            double A = 1;
+
+            List<double> currGuess = new System.Collections.Generic.List<double>();
+            for (int i = 0; i < model.Count; i++)
+                currGuess.Add(1);
+            //currGuess.Add(model[i].Constant);
+
+            bool notConverged = true;
+            double currError = 0;
+            int roundsNotConverges = 0; 
+            while (notConverged)
+            {
+                currError = getError_SPSA(currGuess,model);
+
+
+                double a_k = a / Math.Pow(A + steps + 1, alpha);
+                double c_k = c / Math.Pow(steps + 1, gamma);
+
+                List<double> perturbationVector = getPerturbationVector(model.Count);
+
+
+
+                // Loss function Evalutation
+                List<double> guess1 = new System.Collections.Generic.List<double>();
+                for (int i = 0; i < model.Count; i++)
+                    guess1.Add(currGuess[i] + c_k * perturbationVector[i]);
+                double errorGuess1 = getError_SPSA(guess1,model);
+
+
+                List<double> guess2 = new System.Collections.Generic.List<double>();
+                for (int i = 0; i < model.Count; i++)
+                    guess2.Add(currGuess[i] - c_k * perturbationVector[i]);
+                double errorGuess2 = getError_SPSA(guess2,model);
+
+                // Gradient Approximation
+                List<double> g_k = new List<double>();
+                for (int i = 0; i < model.Count; i++)
+                {
+                    g_k.Add(((errorGuess1 - errorGuess2) / (2 * c_k)) * Math.Pow(perturbationVector[i], -1)); 
+                }
+
+
+
+                // updating Theta estimate
+                List<double> newGuess = new System.Collections.Generic.List<double>();
+                for (int i = 0; i < currGuess.Count; i++)
+                {
+                    newGuess.Add(currGuess[i] - a_k * g_k[i]);
+                }
+
+                double newError = getError_SPSA(newGuess, model);
+
+                if (errorGuess1 < newError && errorGuess1 < errorGuess2 && errorGuess1 < currError)
+                {
+                    for(int i = 0; i < currGuess.Count;i++)
+                        currGuess[i] = guess1[i];
+                    newError = errorGuess1;
+                    roundsNotConverges = 0;
+                    steps += 1;
+                }
+                else if (errorGuess2 < newError && errorGuess2 < errorGuess1 && errorGuess2 < currError)
+                {
+                    for (int i = 0; i < currGuess.Count; i++)
+                        currGuess[i] = guess2[i];
+                    newError = errorGuess2;
+                    roundsNotConverges = 0;
+                    steps += 1;
+                }
+                else if (Math.Abs(currError - newError) < 1E-7 || currError < newError)
+                {
+                    roundsNotConverges += 1;
+
+                    if (roundsNotConverges > currGuess.Count)
+                    {
+                        steps += 1;
+                        roundsNotConverges = 0;
+                    }
+                }
+                else
+                {
+                    for (int i = 0; i < currGuess.Count; i++)
+                        currGuess[i] = newGuess[i];
+                    
+                    roundsNotConverges = 0;
+                    steps += 1;
+                }
+
+                if (k > 100000)
+                    notConverged = false;
+
+                k += 1;
+            }
+
+            for (int i = 0; i < model.Count; i++)
+                model[i].Constant = currGuess[i];
+
+            return true;
+        }
+
+        private double getError_SPSA(System.Collections.Generic.List<double> guess1, System.Collections.Generic.List<Feature> model)
+        {
+            for (int i = 0; i < guess1.Count; i++)
+            {
+                model[i].Constant = guess1[i];
+            }
+            double error = 0.0;
+            this.computeError(model, learningSet, out error);
+            return error;
+        }
+
+        private System.Collections.Generic.List<double> getPerturbationVector(int modelSize)
+        {
+            List<double> perVector = new List<double>();
+            byte[] buffer = new byte[1];
+
+            for (int i = 0; i < modelSize; i++)
+            {
+                int value = rand_SPSA.Next(2);
+                if (value == 0)
+                  perVector.Add(-1);
+                else
+                  perVector.Add(1);
+            }
+            return perVector;
+        }
+
+
 
         private bool fitModel_GradientDescent(List<Feature> newModel)
         {
@@ -470,15 +646,65 @@ namespace MachineLearning.Learning.Regression
             double[] learningRates = new double[newModel.Count];
 
             for (int i = 0; i < newModel.Count; i++)
-                learningRates[i] = 0.0001 / newModel[i].getMaxValue();
+                learningRates[i] = 0.0001 ;// newModel[i].getMaxValue();
+
+
+            int dimToUpdate = 0;
+
+
+            if (newModel.Count == 2 && newModel[1].getPureString().Contains("postSmoothing"))
+            {
+                for (int i = 0; i < 1000; i++)
+                {
+                    for (int j = 0; j < 1000; j++)
+                    {
+                        newModel[0].Constant = 50 + (0.05 * i);
+                        newModel[1].Constant = 0 + (0.05 * j);
+
+                        double error;
+                        this.computeError(newModel, learningSet, out error);
+
+                        double errorLeft;
+                        newModel[0].Constant = newModel[0].Constant + 0.01;
+                        this.computeError(newModel, learningSet, out errorLeft);
+                        newModel[0].Constant = newModel[0].Constant - 0.01;
+
+                        double errorRight;
+                        newModel[0].Constant = newModel[0].Constant - 0.01;
+                        this.computeError(newModel, learningSet, out errorRight);
+                        newModel[0].Constant = newModel[0].Constant + 0.01;
+
+                        double errorTop;
+                        newModel[1].Constant = newModel[1].Constant + 0.01;
+                        this.computeError(newModel, learningSet, out errorTop);
+                        newModel[1].Constant = newModel[1].Constant - 0.01;
+
+                        double errorBot;
+                        newModel[1].Constant = newModel[1].Constant - 0.01;
+                        this.computeError(newModel, learningSet, out errorBot);
+                        newModel[1].Constant = newModel[1].Constant + 0.01;
+
+                        if(error <= errorBot && error <= errorLeft && error <= errorRight && error <= errorTop)
+                        {
+
+                        }
+
+
+
+                        Console.WriteLine(newModel[0].Constant + ";" + newModel[1].Constant + ";" + error);
+                    }
+                }
+
+
+                System.Environment.Exit(1);
+            }
+
+            int dimToConsider = 0;
 
             while (!endingReached)
             {
                 double[] constantChange = new double[newModel.Count];
                 double currAverageError = 0.0;
-
-                double errorOld = 0.0;
-                double maxOld = 0.0;
 
                 for (int k = 0; k < learningSet.Count; k++)
                 {
@@ -488,16 +714,8 @@ namespace MachineLearning.Learning.Regression
                     for (int i = 0; i < newModel.Count; i++)
                     {
                         diffValue += newModel[i].Constant * newModel[i].eval(learningSet[k]) ;
-                        errorOld += (learningSet[k].GetNFPValue() - newModel[i].Constant * newModel[i].eval(learningSet[k])) * (learningSet[k].GetNFPValue() - newModel[i].Constant * newModel[i].eval(learningSet[k]));
-
-                       
-
                     }
                     diffValue -= learningSet[k].GetNFPValue();
-
-                    maxOld = Math.Max(maxOld , Math.Abs(diffValue));
-                    
-                    //currAverageError += Math.Abs(errorOld);
 
                     currAverageError += Math.Abs(diffValue);
 
@@ -506,8 +724,9 @@ namespace MachineLearning.Learning.Regression
                         constantChange[i] += diffValue * newModel[i].eval(learningSet[k]);
                 }
 
+                this.computeError(newModel, learningSet, out currAverageError);
                 
-                currAverageError = Math.Sqrt( currAverageError / learningSet.Count);
+                //currAverageError = Math.Sqrt( currAverageError / learningSet.Count);
                 endingReached = Math.Abs(currAverageError) <= threshold;
                 
                 // Checking if all learning rates are small
@@ -557,28 +776,15 @@ namespace MachineLearning.Learning.Regression
                  
                     double nextAverageError = 0.0;
 
-                    if (newModel.Count == 2 && newModel[1].getPureString().Contains("postSmoothing"))
+                    
+
+                    List<Feature> eventuellNeuesModel = new System.Collections.Generic.List<Feature>();
+
+                    for (int i = 0; i < newModel.Count; i++)
                     {
-                        if (constantChange[1] > 0.0)
-                        {
-                        }
-                        Console.WriteLine(nextConstants[0] + " -> " + constantChange[0] + " | " + nextConstants[1] + " -> " + constantChange[1]);
-                        //for (int k = 0; k < learningSet.Count; k++)
-                        //{
-                        //    double pred1 = 0.0;
-                        //    double pred2 = 0.0;
-
-                        //    for (int j = 0; j < newModel.Count; j++)
-                        //        pred1 += nextConstants[j] * newModel[j].eval(learningSet[k]);
-
-                        //    for (int j = 0; j < newModel.Count; j++)
-                        //        pred2 += newModel[j].Constant * newModel[j].eval(learningSet[k]);
-
-
-
-                        //    Console.WriteLine("pred1: " + pred1 + " | pred2: " + pred2 + "  measured: " + learningSet[k].GetNFPValue());
-                        //}
-
+                        Feature newF = new Feature(newModel[i].getPureString(), GlobalState.varModel);
+                        newF.Constant = nextConstants[i];
+                        eventuellNeuesModel.Add(newF);
                     }
 
                     for (int k = 0; k < learningSet.Count; k++)
@@ -599,7 +805,9 @@ namespace MachineLearning.Learning.Regression
                         nextAverageError += Math.Abs(diffValue);
                     }
 
-                    nextAverageError = Math.Sqrt( nextAverageError / learningSet.Count);
+                    this.computeError(eventuellNeuesModel, learningSet, out nextAverageError);
+
+                    //nextAverageError = Math.Sqrt( nextAverageError / learningSet.Count);
 
                     //double epsilon = 0.00000000000001;
 
@@ -612,31 +820,57 @@ namespace MachineLearning.Learning.Regression
 
                     if(Math.Abs(nextAverageError) == Math.Abs(currAverageError))
                     {
-                        if (maxNew < maxOld)
-                        {
+                        //if (maxNew < maxOld)
+                        //{
 
-                            for (int i = 0; i < newModel.Count; i++)
-                            {
-                                newModel[i].Constant = nextConstants[i];
-                            }
+                            //for (int i = 0; i < newModel.Count; i++)
+                            //{
+                            newModel[dimToUpdate % newModel.Count].Constant = nextConstants[dimToUpdate % newModel.Count];
+                            //}
                             constantsChanged = true;
-                        }
+                        //}
                     }
 
                     if (Math.Abs(nextAverageError) < Math.Abs(currAverageError))
                     {
-                        for (int i = 0; i < newModel.Count; i++)
-                        {
-                            newModel[i].Constant = nextConstants[i]; 
-                            learningRates[i] *= 1.05;
-                        }
+                        //for (int i = 0; i < newModel.Count; i++)
+                        //{
+                        newModel[dimToUpdate % newModel.Count].Constant = nextConstants[dimToUpdate % newModel.Count];
+                        learningRates[dimToUpdate % newModel.Count] *= 1.05;
+                        //}
                         constantsChanged = true;
                     }
                     else
                     {
-                        for (int i = 0; i < newModel.Count; i++)
-                            learningRates[i] *= 0.95;
+                        //for (int i = 0; i < newModel.Count; i++)
+                        learningRates[dimToUpdate % newModel.Count] *= 0.95;
                     }
+
+                    if (newModel.Count == 2 && newModel[1].getPureString().Contains("postSmoothing"))
+                    {
+                        if (constantChange[1] > 0.0)
+                        {
+                        }
+                        Console.WriteLine(nextConstants[0] + " | " + nextConstants[1] + " thisError " + currAverageError + " nextError " + nextAverageError);
+                        //for (int k = 0; k < learningSet.Count; k++)
+                        //{
+                        //    double pred1 = 0.0;
+                        //    double pred2 = 0.0;
+
+                        //    for (int j = 0; j < newModel.Count; j++)
+                        //        pred1 += nextConstants[j] * newModel[j].eval(learningSet[k]);
+
+                        //    for (int j = 0; j < newModel.Count; j++)
+                        //        pred2 += newModel[j].Constant * newModel[j].eval(learningSet[k]);
+
+
+
+                        //    Console.WriteLine("pred1: " + pred1 + " | pred2: " + pred2 + "  measured: " + learningSet[k].GetNFPValue());
+                        //}
+
+                    }
+
+                    dimToUpdate += 1;
 
                     if (constantsChanged)
                         lastError = currAverageError;
@@ -1116,7 +1350,7 @@ namespace MachineLearning.Learning.Regression
                 //http://math.stackexchange.com/questions/677852/how-to-calculate-relative-error-when-true-value-is-zero
                 //http://stats.stackexchange.com/questions/86708/how-to-calculate-relative-error-when-the-true-value-is-zero
 
-                if (realValue < 1)
+                if (Math.Abs(realValue) < 1)
                 {//((2(true-est) / true+est) - 1 ) * 100
                     //continue;
                     skips++;
@@ -1131,7 +1365,7 @@ namespace MachineLearning.Learning.Regression
                 switch (this.MLsettings.lossFunction)
                 {
                     case ML_Settings.LossFunction.RELATIVE:
-                        if (realValue < 1)
+                        if (Math.Abs(realValue) < 1)
                         {
                             error = Math.Abs(((2 * (realValue - estimatedValue) / (realValue + estimatedValue)) - 1) * 100);
                         }
@@ -1530,7 +1764,7 @@ namespace MachineLearning.Learning.Regression
                 //http://math.stackexchange.com/questions/677852/how-to-calculate-relative-error-when-true-value-is-zero
                 //http://stats.stackexchange.com/questions/86708/how-to-calculate-relative-error-when-the-true-value-is-zero
 
-                if (realValue < 1)
+                if (Math.Abs(realValue) < 1)
                 {//((2(true-est) / true+est) - 1 ) * 100
                     //continue;
                     skips++;
@@ -1541,7 +1775,7 @@ namespace MachineLearning.Learning.Regression
                 switch (loss)
                 {
                     case ML_Settings.LossFunction.RELATIVE:
-                        if (realValue < 1)
+                        if (Math.Abs(realValue) < 1)
                         {
                             error = Math.Abs(((2 * (realValue - estimatedValue) / (realValue + estimatedValue)) - 1) * 100);
                         }
